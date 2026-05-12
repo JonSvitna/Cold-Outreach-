@@ -1,0 +1,183 @@
+system:
+  name: sentinel-growth-commander
+  objective: >
+    Multi-agent outbound growth system for Vulnaguard Sentinel that researches
+    prospects, generates qualified leads, drafts intelligent outreach, manages
+    follow-up sequences, monitors campaign health, escalates important events,
+    and preserves trust/compliance safety.
+
+orchestration:
+  primary:
+    - CrewAI
+  optional_graph_runtime:
+    - LangGraph
+
+backend:
+  api:
+    - FastAPI
+  runtime:
+    - Uvicorn
+
+database:
+  primary:
+    - PostgreSQL
+  vector_search:
+    - pgvector
+  tables:
+    - leads
+    - lead_profiles
+    - outreach_messages
+    - outreach_sequences
+    - message_versions
+    - responses
+    - campaigns
+    - notifications
+    - escalation_events
+    - suppression_list
+    - activity_logs
+    - prompt_memory
+
+queue:
+  broker:
+    - Redis
+  workers:
+    - Celery
+
+email:
+  phase_1_primary:
+    provider: Resend
+    env: RESEND_API_KEY
+  backup:
+    provider: Postmark
+    env: POSTMARK_SERVER_TOKEN
+
+ai_models:
+  openai:
+    env: OPENAI_API_KEY
+    model_env: MODEL
+  claude:
+    env: ANTHROPIC_API_KEY
+    model_env: CLAUDE_MODEL
+
+research:
+  firecrawl:
+    env: FIRECRAWL_API_KEY
+    used_by:
+      - lead_research_agent
+      - prospect_intelligence_agent
+  tavily:
+    env: TAVILY_API_KEY
+    used_by:
+      - lead_research_agent
+      - prospect_intelligence_agent
+  builtwith:
+    env: BUILTWITH_API_KEY
+    used_by:
+      - lead_research_agent
+      - enrichment_agent
+  apollo:
+    env: APOLLO_API_KEY
+    used_by:
+      - lead_research_agent
+      - enrichment_agent
+  hunter:
+    env: HUNTER_API_KEY
+    used_by:
+      - lead_research_agent
+      - enrichment_agent
+  clearbit:
+    env: CLEARBIT_API_KEY
+    used_by:
+      - enrichment_agent
+  linkedin_enrichment:
+    env: LINKEDIN_ENRICHMENT_API_KEY
+    used_by:
+      - lead_research_agent
+      - enrichment_agent
+
+frontend:
+  framework:
+    - Next.js
+  styling:
+    - Tailwind
+    - shadcn/ui
+
+hosting:
+  backend:
+    - Railway
+    - Render
+  frontend:
+    - Vercel
+  crewai:
+    - CrewAI AMP
+
+agent_tooling:
+  sentinel_growth_commander:
+    - CrewAI
+    - LangGraph
+    - PostgreSQL
+    - Redis
+  lead_research_agent:
+    - Firecrawl
+    - Tavily
+    - LinkedIn enrichment APIs
+    - Apollo
+    - Hunter.io
+    - Clearbit
+    - BuiltWith
+  enrichment_agent:
+    - Apollo
+    - Hunter.io
+    - Clearbit
+    - BuiltWith
+    - PostgreSQL
+  prospect_intelligence_agent:
+    - Website scraping
+    - Job posting analysis
+    - Search indexing
+    - Public compliance references
+    - DNS/header analysis authorized public sources only
+  risk_context_agent:
+    - Public compliance references
+    - PostgreSQL
+    - pgvector
+  psychology_profiling_agent:
+    - OpenAI reasoning
+    - Claude contextual analysis
+  offer_positioning_agent:
+    - OpenAI
+    - Claude
+    - Prompt templates
+  cta_optimization_agent:
+    - OpenAI
+    - Claude
+    - Prompt templates
+  message_generation_agent:
+    - OpenAI
+    - Claude
+    - Prompt templates
+    - Prompt memory database
+  compliance_guardrail_agent:
+    - OpenAI
+    - Claude
+    - Guardrail prompt templates
+  outreach_sequence_agent:
+    - Resend
+    - Postmark
+    - Redis queue
+    - Celery
+  response_interpretation_agent:
+    - OpenAI
+    - Claude
+    - PostgreSQL
+  notification_escalation_agent:
+    - Email alerts
+    - Slack
+    - Discord
+    - SMS
+    - Dashboard alerts
+  campaign_health_agent:
+    - PostgreSQL
+    - Redis
+    - Email provider events
+

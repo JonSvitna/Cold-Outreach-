@@ -5,7 +5,20 @@ description = "CrewAI flow for Sentinel-CMMC cold outreach and growth operations
 authors = [{ name = "Sean Murrill" }]
 requires-python = ">=3.11,<3.14"
 dependencies = [
+    "anthropic>=0.40.0",
+    "celery>=5.4.0",
     "crewai>=1.14.0",
+    "fastapi>=0.115.0",
+    "firecrawl-py>=1.0.0",
+    "openai>=1.55.0",
+    "pgvector>=0.3.6",
+    "psycopg[binary]>=3.2.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.1",
+    "redis>=5.2.0",
+    "resend>=2.4.0",
+    "tavily-python>=0.5.0",
+    "uvicorn>=0.32.0",
 ]
 
 [project.scripts]
