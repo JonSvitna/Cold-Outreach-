@@ -1,0 +1,93 @@
+research_lead_task:
+  description: >
+    Build a structured lead profile for {company_name}. Contact:
+    {contact_name}, role: {contact_role}, domain: {company_domain}. Use this
+    known context: {known_context}. Do not browse or invent missing facts. Mark
+    unknown items as unknown. Score the prospect using the Sentinel-CMMC ICP
+    signals: active federal/DoD contract pressure, CMMC or audit deadline within
+    12 months, 10-100 employees, spreadsheet/manual compliance process,
+    compliance/security role on staff, and frustration with scan-to-compliance
+    translation.
+  expected_output: >
+    A structured markdown lead profile with: company summary, known facts,
+    unknowns, ICP score with rationale, confidence score from 0.0 to 1.0, and a
+    pursue/nurture/disqualify recommendation.
+  agent: lead_researcher
+
+prospect_intelligence_task:
+  description: >
+    Using the lead profile, identify the likely business problem, operational
+    pressure, compliance angle, buyer fear, and what must not be claimed. Tie the
+    context back to CMMC/NIST readiness, contract eligibility, and revenue risk
+    only where the evidence supports it.
+  expected_output: >
+    A markdown intelligence brief with likely pain signals, buyer-specific
+    framing for {contact_role}, safe personalization angles, risk claims to
+    avoid, and any NEEDS_MORE_RESEARCH gaps.
+  agent: prospect_intelligence_agent
+  context:
+    - research_lead_task
+
+offer_positioning_task:
+  description: >
+    Create the offer frame for {company_name} and {contact_name}. Anchor on the
+    core pilot: 90-Day Compliance Intelligence Pilot at $3,000/month for one
+    environment. Use scarcity only if explicitly supplied in the known context.
+    Keep the positioning specific to Sentinel-CMMC and do not position it as a
+    scanner, SOC platform, Vanta/Drata clone, or full automation replacement.
+  expected_output: >
+    A markdown positioning brief with a primary value proposition, approved
+    one-sentence pitch, trust frame, low-friction CTA, and objection risks.
+  agent: offer_positioning_agent
+  context:
+    - research_lead_task
+    - prospect_intelligence_task
+
+message_generation_task:
+  description: >
+    Draft the outreach message for {channel}, sequence step {sequence_position}.
+    The primary goal is: {primary_goal}. Keep cold email to at most five
+    sentences. For LinkedIn, keep it brief and conversational. Do not use "I
+    hope this finds you well", "touch base", "synergy", fake familiarity, or
+    fake urgency.
+  expected_output: >
+    A markdown draft containing: subject options if email, the message body,
+    personalization notes, and the intended CTA.
+  agent: message_generation_agent
+  context:
+    - research_lead_task
+    - prospect_intelligence_task
+    - offer_positioning_task
+
+compliance_review_task:
+  description: >
+    Review the drafted outreach against the Sentinel compliance and trust
+    guardrails. Reject or revise anything that fabricates findings, implies
+    unauthorized scanning, invents urgency, overpromises compliance automation,
+    impersonates auditors, or creates spam/brand risk.
+  expected_output: >
+    A markdown guardrail report with APPROVED, REVISE, or REJECT status. Include
+    specific issues, the corrected final message if changes are needed, and a
+    short explanation of why the final message is safe to send for human
+    approval.
+  agent: compliance_guardrail_agent
+  context:
+    - message_generation_task
+
+sequence_plan_task:
+  description: >
+    Create the human-approved outbound operation plan for this lead. Include the
+    final approved message, follow-up timing, escalation triggers, suppression
+    rules, and the exact next action Sean should take. Do not automate sending.
+  expected_output: >
+    A final markdown outreach plan with sections: lead decision, approved
+    message, follow-up sequence, escalation rules, suppression rules, and next
+    human action. No fenced code block around the whole document.
+  agent: sequence_manager_agent
+  context:
+    - research_lead_task
+    - prospect_intelligence_task
+    - offer_positioning_task
+    - compliance_review_task
+  output_file: output/sentinel_outreach_plan.md
+
