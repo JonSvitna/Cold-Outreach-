@@ -9,6 +9,7 @@ dependencies = [
     "celery>=5.4.0",
     "crewai>=1.14.0",
     "fastapi>=0.115.0",
+    "httpx>=0.27.0",
     "firecrawl-py>=1.0.0",
     "openai>=1.55.0",
     "pgvector>=0.3.6",
@@ -24,6 +25,8 @@ dependencies = [
 [project.scripts]
 cold_outreach = "cold_outreach_flow.main:kickoff"
 kickoff = "cold_outreach_flow.main:kickoff"
+kickoff_response = "cold_outreach_flow.main:kickoff_response"
+kickoff_health = "cold_outreach_flow.main:kickoff_health_check"
 plot = "cold_outreach_flow.main:plot"
 
 [build-system]

@@ -1,3 +1,18 @@
+"""Sentinel Growth Commander crew — hierarchical, commander-managed.
+
+The Sentinel Growth Commander is the manager_agent: it receives the full task
+list, delegates to specialists, evaluates every output, and can reject/redo
+work before the flow advances. The commander does NOT appear in self.agents.
+
+Tool assignment mirrors the architecture plan:
+  Research layer     → Tavily + Firecrawl (live web intelligence)
+  Risk / history     → PostgreSQL read (past profiles, suppression)
+  Sequence / ops     → PostgreSQL write (record plans and sequences)
+  Response handling  → PostgreSQL write (classify + persist replies)
+  Notifications      → Resend + Slack + Discord (alert Sean immediately)
+  Health monitoring  → PostgreSQL read (campaign metrics and trends)
+"""
+
 from __future__ import annotations
 
 from typing import List
@@ -6,6 +21,8 @@ from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
+from cold_outreach_flow.tools.data_tools import get_data_read_tools, get_data_write_tools
+from cold_outreach_flow.tools.notification_tools import get_notification_tools
 from cold_outreach_flow.tools.research_tools import get_enrichment_tools, get_research_tools
 
 
@@ -19,61 +36,124 @@ class GrowthCrew:
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    @agent
-    def sentinel_growth_commander(self) -> Agent:
-        return Agent(config=self.agents_config["sentinel_growth_commander"], verbose=True)  # type: ignore[index]
+    # ------------------------------------------------------------------
+    # Research layer
+    # ------------------------------------------------------------------
 
     @agent
     def lead_research_agent(self) -> Agent:
-        return Agent(config=self.agents_config["lead_research_agent"], tools=get_research_tools(), verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["lead_research_agent"],  # type: ignore[index]
+            tools=get_research_tools(),
+            verbose=True,
+        )
 
     @agent
     def enrichment_agent(self) -> Agent:
-        return Agent(config=self.agents_config["enrichment_agent"], tools=get_enrichment_tools(), verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["enrichment_agent"],  # type: ignore[index]
+            tools=get_enrichment_tools(),
+            verbose=True,
+        )
 
     @agent
     def prospect_intelligence_agent(self) -> Agent:
-        return Agent(config=self.agents_config["prospect_intelligence_agent"], tools=get_research_tools(), verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["prospect_intelligence_agent"],  # type: ignore[index]
+            tools=get_research_tools(),
+            verbose=True,
+        )
 
     @agent
     def risk_context_agent(self) -> Agent:
-        return Agent(config=self.agents_config["risk_context_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["risk_context_agent"],  # type: ignore[index]
+            tools=get_data_read_tools(),
+            verbose=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Persuasion layer (LLM-only — work from context passed by commander)
+    # ------------------------------------------------------------------
 
     @agent
     def psychology_profiling_agent(self) -> Agent:
-        return Agent(config=self.agents_config["psychology_profiling_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["psychology_profiling_agent"],  # type: ignore[index]
+            verbose=True,
+        )
 
     @agent
     def offer_positioning_agent(self) -> Agent:
-        return Agent(config=self.agents_config["offer_positioning_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["offer_positioning_agent"],  # type: ignore[index]
+            verbose=True,
+        )
 
     @agent
     def cta_optimization_agent(self) -> Agent:
-        return Agent(config=self.agents_config["cta_optimization_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["cta_optimization_agent"],  # type: ignore[index]
+            verbose=True,
+        )
 
     @agent
     def message_generation_agent(self) -> Agent:
-        return Agent(config=self.agents_config["message_generation_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["message_generation_agent"],  # type: ignore[index]
+            verbose=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Safety layer
+    # ------------------------------------------------------------------
 
     @agent
     def compliance_guardrail_agent(self) -> Agent:
-        return Agent(config=self.agents_config["compliance_guardrail_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["compliance_guardrail_agent"],  # type: ignore[index]
+            verbose=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Operations layer
+    # ------------------------------------------------------------------
 
     @agent
     def outreach_sequence_agent(self) -> Agent:
-        return Agent(config=self.agents_config["outreach_sequence_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["outreach_sequence_agent"],  # type: ignore[index]
+            tools=get_data_write_tools(),
+            verbose=True,
+        )
 
     @agent
     def response_interpretation_agent(self) -> Agent:
-        return Agent(config=self.agents_config["response_interpretation_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["response_interpretation_agent"],  # type: ignore[index]
+            tools=get_data_write_tools(),
+            verbose=True,
+        )
 
     @agent
     def notification_escalation_agent(self) -> Agent:
-        return Agent(config=self.agents_config["notification_escalation_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["notification_escalation_agent"],  # type: ignore[index]
+            tools=get_notification_tools() + get_data_write_tools(),
+            verbose=True,
+        )
 
     @agent
     def campaign_health_agent(self) -> Agent:
-        return Agent(config=self.agents_config["campaign_health_agent"], verbose=True)  # type: ignore[index]
+        return Agent(
+            config=self.agents_config["campaign_health_agent"],  # type: ignore[index]
+            tools=get_data_read_tools(),
+            verbose=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Tasks
+    # ------------------------------------------------------------------
 
     @task
     def commander_intake_task(self) -> Task:
@@ -135,11 +215,34 @@ class GrowthCrew:
     def commander_final_approval_task(self) -> Task:
         return Task(config=self.tasks_config["commander_final_approval_task"])  # type: ignore[index]
 
+    # ------------------------------------------------------------------
+    # Commander — manager_agent, not in self.agents
+    # ------------------------------------------------------------------
+
+    def _commander(self) -> Agent:
+        """The Sentinel Growth Commander as hierarchical manager.
+
+        Not decorated with @agent so CrewAI does not add it to self.agents.
+        Passed directly as manager_agent on the Crew so it orchestrates all
+        other agents, evaluates their outputs, and decides what to redo.
+        """
+        return Agent(
+            config=self.agents_config["sentinel_growth_commander"],  # type: ignore[index]
+            allow_delegation=True,
+            verbose=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Crew
+    # ------------------------------------------------------------------
+
     @crew
     def crew(self) -> Crew:
         return Crew(
             agents=self.agents,
             tasks=self.tasks,
-            process=Process.sequential,
+            process=Process.hierarchical,
+            manager_agent=self._commander(),
+            memory=True,
             verbose=True,
         )
