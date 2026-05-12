@@ -1,64 +1,87 @@
 """Sentinel Growth Commander — event-driven agentic flow.
 
-Three entry points map to three business events:
+Sean provides the minimum to get started. Agents research and discover
+everything else autonomously.
 
-  new_lead          Full pipeline: research → positioning → message → compliance
-                    → sequence plan → notifications. Commander manages all agents.
+Three events map to three business situations:
 
-  response_received Classify an inbound reply, log it, escalate to Sean if needed.
+  new_lead          Sean enters a company name and domain.
+                    Agents research the company, identify the right contact,
+                    build an intelligence profile, write and compliance-check
+                    the message, plan the sequence, and hand Sean the approved
+                    outreach package for final send approval.
 
-  health_check      Query campaign metrics, detect issues, alert Sean if critical.
+  response_received An inbound reply arrives.
+                    Agents classify it, log it, and alert Sean if it requires
+                    immediate action (hot lead, pricing request, legal, etc.).
 
-Trigger via env var or payload:
-  EVENT_TYPE=new_lead           (default)
-  EVENT_TYPE=response_received
-  EVENT_TYPE=health_check
+  health_check      Campaign health audit.
+                    Agents check metrics, detect deliverability or quality
+                    issues, and alert Sean if anything needs attention.
+
+Set EVENT_TYPE env var or pass via payload. Defaults to new_lead.
 """
 
 from __future__ import annotations
 
 import os
 
-from crewai import Agent, Crew, Process, Task
+from crewai import Crew, Process
 from crewai.flow import Flow, listen, router, start
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from cold_outreach_flow.crews.growth_crew.growth_crew import GrowthCrew
-from cold_outreach_flow.tools.data_tools import get_data_write_tools
-from cold_outreach_flow.tools.notification_tools import get_notification_tools
 
 
 # ---------------------------------------------------------------------------
-# Flow state
+# Flow state — ONLY real user inputs. No internal / output fields.
+# The platform UI exposes every field here, so keep this list minimal.
 # ---------------------------------------------------------------------------
 
 class OutreachFlowState(BaseModel):
-    # Routing
-    event_type: str = "new_lead"
+    # ── Routing ────────────────────────────────────────────────────────────
+    event_type: str = Field(
+        default="new_lead",
+        description="new_lead | response_received | health_check",
+    )
 
-    # new_lead fields
-    company_name: str = ""
-    contact_name: str = ""
-    contact_role: str = ""
-    company_domain: str = ""
-    channel: str = ""
-    sequence_position: str = ""
-    primary_goal: str = ""
-    known_context: str = ""
+    # ── new_lead inputs ────────────────────────────────────────────────────
+    company_name: str = Field(
+        default="",
+        description="Target company name (required for new_lead)",
+    )
+    company_domain: str = Field(
+        default="",
+        description="Company domain or website — agents will search if blank",
+    )
+    contact_name: str = Field(
+        default="",
+        description="Known contact name — agents will find the best contact if blank",
+    )
+    channel: str = Field(
+        default="email",
+        description="Outreach channel: email or linkedin",
+    )
+    known_context: str = Field(
+        default="",
+        description="Any notes you already have about this prospect (optional)",
+    )
 
-    # response_received fields
-    inbound_reply: str = ""
-    reply_from_email: str = ""
-    reply_message_id: str = ""
+    # ── response_received inputs ───────────────────────────────────────────
+    inbound_reply: str = Field(
+        default="",
+        description="Full text of the inbound reply (for response_received event)",
+    )
+    reply_from_email: str = Field(
+        default="",
+        description="Email address of the person who replied",
+    )
 
-    # health_check fields
-    campaign_id: str = ""
-    health_check_scope: str = "all"  # all | domain | sequences | responses
-
-    # Shared output
-    final_plan: str = ""
-    escalation_required: bool = False
-    escalation_summary: str = ""
+    # ── health_check inputs ────────────────────────────────────────────────
+    campaign_id: str = Field(
+        default="",
+        description="Specific campaign ID to audit — leave blank to check all",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -66,76 +89,32 @@ class OutreachFlowState(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ColdOutreachFlow(Flow[OutreachFlowState]):
-    """Stateful event-driven wrapper around the Sentinel agent crews."""
+    """Sentinel Growth Commander — runs the full outbound intelligence cycle."""
 
     # ------------------------------------------------------------------
-    # Entry point — load inputs, determine route
+    # Entry point — load inputs from payload or environment
     # ------------------------------------------------------------------
 
     @start()
     def load_inputs(self, crewai_trigger_payload: dict | None = None) -> str:
-        payload = crewai_trigger_payload or {}
+        p = crewai_trigger_payload or {}
 
-        self.state.event_type = payload.get(
-            "event_type", os.getenv("EVENT_TYPE", "new_lead")
-        )
+        self.state.event_type    = p.get("event_type",    os.getenv("EVENT_TYPE",    "new_lead"))
+        self.state.company_name  = p.get("company_name",  os.getenv("COMPANY_NAME",  ""))
+        self.state.company_domain= p.get("company_domain",os.getenv("COMPANY_DOMAIN",""))
+        self.state.contact_name  = p.get("contact_name",  os.getenv("CONTACT_NAME",  ""))
+        self.state.channel       = p.get("channel",       os.getenv("CHANNEL",       "email"))
+        self.state.known_context = p.get("known_context", os.getenv("KNOWN_CONTEXT", ""))
 
-        # new_lead
-        self.state.company_name = payload.get(
-            "company_name", os.getenv("COMPANY_NAME", "Example Defense Manufacturing")
-        )
-        self.state.contact_name = payload.get(
-            "contact_name", os.getenv("CONTACT_NAME", "Pat Prospect")
-        )
-        self.state.contact_role = payload.get(
-            "contact_role", os.getenv("CONTACT_ROLE", "COO")
-        )
-        self.state.company_domain = payload.get(
-            "company_domain", os.getenv("COMPANY_DOMAIN", "example.com")
-        )
-        self.state.channel = payload.get("channel", os.getenv("CHANNEL", "email"))
-        self.state.sequence_position = payload.get(
-            "sequence_position", os.getenv("SEQUENCE_POSITION", "day_1")
-        )
-        self.state.primary_goal = payload.get(
-            "primary_goal",
-            os.getenv(
-                "PRIMARY_GOAL",
-                "Book a 15-minute discovery call for the 90-day Sentinel-CMMC pilot.",
-            ),
-        )
-        self.state.known_context = payload.get(
-            "known_context",
-            os.getenv(
-                "KNOWN_CONTEXT",
-                "Small GovCon subcontractor pursuing CMMC Level 2 readiness; "
-                "likely using spreadsheets for readiness tracking.",
-            ),
-        )
+        self.state.inbound_reply    = p.get("inbound_reply",    os.getenv("INBOUND_REPLY",    ""))
+        self.state.reply_from_email = p.get("reply_from_email", os.getenv("REPLY_FROM_EMAIL", ""))
 
-        # response_received
-        self.state.inbound_reply = payload.get(
-            "inbound_reply", os.getenv("INBOUND_REPLY", "")
-        )
-        self.state.reply_from_email = payload.get(
-            "reply_from_email", os.getenv("REPLY_FROM_EMAIL", "")
-        )
-        self.state.reply_message_id = payload.get(
-            "reply_message_id", os.getenv("REPLY_MESSAGE_ID", "")
-        )
-
-        # health_check
-        self.state.campaign_id = payload.get(
-            "campaign_id", os.getenv("CAMPAIGN_ID", "")
-        )
-        self.state.health_check_scope = payload.get(
-            "health_check_scope", os.getenv("HEALTH_CHECK_SCOPE", "all")
-        )
+        self.state.campaign_id = p.get("campaign_id", os.getenv("CAMPAIGN_ID", ""))
 
         return self.state.event_type
 
     # ------------------------------------------------------------------
-    # Router — dispatch to the correct flow path
+    # Router — dispatch to the correct path
     # ------------------------------------------------------------------
 
     @router(load_inputs)
@@ -147,133 +126,140 @@ class ColdOutreachFlow(Flow[OutreachFlowState]):
         return "new_lead"
 
     # ------------------------------------------------------------------
-    # Path 1: new_lead — full hierarchical pipeline
+    # Path 1: new_lead
+    # Full 13-agent hierarchical pipeline. Agents discover everything.
     # ------------------------------------------------------------------
 
     @listen("new_lead")
     def process_new_lead(self) -> str:
+        if not self.state.company_name:
+            return "ERROR: company_name is required to process a new lead."
+
         result = GrowthCrew().crew().kickoff(inputs=self._lead_inputs())
-        self.state.final_plan = result.raw
-        print(
-            f"\nSentinel outreach plan written to output/sentinel_outreach_plan.md\n"
-            f"Final state: {self.state.event_type}"
-        )
-        return self.state.final_plan
+        print("\nSentinel outreach plan written to output/sentinel_outreach_plan.md")
+        return result.raw
 
     # ------------------------------------------------------------------
-    # Path 2: response_received — classify reply, log it, escalate if needed
+    # Path 2: response_received
+    # 2-agent crew: classify the reply, log it, alert Sean if urgent.
     # ------------------------------------------------------------------
 
     @listen("response_received")
     def process_response(self) -> str:
-        crew_instance = GrowthCrew()
+        if not self.state.inbound_reply:
+            return "ERROR: inbound_reply is required for response_received event."
 
-        response_crew = Crew(
+        gc = GrowthCrew()
+        crew = Crew(
             agents=[
-                crew_instance.response_interpretation_agent(),
-                crew_instance.notification_escalation_agent(),
+                gc.response_interpretation_agent(),
+                gc.notification_escalation_agent(),
             ],
             tasks=[
-                crew_instance.response_interpretation_task(),
-                crew_instance.notification_escalation_task(),
+                gc.response_interpretation_task(),
+                gc.notification_escalation_task(),
             ],
             process=Process.sequential,
             verbose=True,
         )
-
-        result = response_crew.kickoff(inputs=self._response_inputs())
-        self.state.final_plan = result.raw
-
-        if any(
-            word in result.raw.lower()
-            for word in ("interested", "pricing", "technical", "legal", "compliance")
-        ):
-            self.state.escalation_required = True
-            self.state.escalation_summary = result.raw[:500]
-
-        print(
-            f"\nResponse processed."
-            f" Escalation required: {self.state.escalation_required}"
-        )
-        return self.state.final_plan
+        result = crew.kickoff(inputs=self._response_inputs())
+        print("\nResponse processed.")
+        return result.raw
 
     # ------------------------------------------------------------------
-    # Path 3: health_check — campaign monitoring + alert if critical
+    # Path 3: health_check
+    # 2-agent crew: audit metrics, alert Sean if action is needed.
     # ------------------------------------------------------------------
 
     @listen("health_check")
     def run_health_check(self) -> str:
-        crew_instance = GrowthCrew()
-
-        health_crew = Crew(
+        gc = GrowthCrew()
+        crew = Crew(
             agents=[
-                crew_instance.campaign_health_agent(),
-                crew_instance.notification_escalation_agent(),
+                gc.campaign_health_agent(),
+                gc.notification_escalation_agent(),
             ],
             tasks=[
-                crew_instance.campaign_health_task(),
-                crew_instance.notification_escalation_task(),
+                gc.campaign_health_task(),
+                gc.notification_escalation_task(),
             ],
             process=Process.sequential,
             verbose=True,
         )
-
-        result = health_crew.kickoff(inputs=self._health_inputs())
-        self.state.final_plan = result.raw
-        print(f"\nHealth check complete.")
-        return self.state.final_plan
+        result = crew.kickoff(inputs=self._health_inputs())
+        print("\nHealth check complete.")
+        return result.raw
 
     # ------------------------------------------------------------------
-    # Input helpers
+    # Crew input builders
+    # All template variables used in agents.yaml / tasks.yaml must appear
+    # here with sensible defaults so agents always have something to work
+    # from even when the human provided minimal input.
     # ------------------------------------------------------------------
 
     def _lead_inputs(self) -> dict:
+        name = self.state.company_name
+        domain = self.state.company_domain or f"[research {name}'s domain]"
+        contact = self.state.contact_name or "[research the best contact at this company]"
+        context = self.state.known_context or "No prior context. Full research required."
         return {
-            "company_name": self.state.company_name,
-            "contact_name": self.state.contact_name,
-            "contact_role": self.state.contact_role,
-            "company_domain": self.state.company_domain,
-            "channel": self.state.channel,
-            "sequence_position": self.state.sequence_position,
-            "primary_goal": self.state.primary_goal,
-            "known_context": self.state.known_context,
+            # core identifiers
+            "company_name":    name,
+            "company_domain":  domain,
+            "contact_name":    contact,
+            "channel":         self.state.channel or "email",
+            "known_context":   context,
+            # fields agents must discover — provided as placeholders so
+            # task/agent YAML templates always resolve without error
+            "contact_role":    "[to be discovered by Lead Research Agent]",
+            "sequence_position": "day_1_initial_outreach",
+            "primary_goal": (
+                "Book a 15-minute discovery call for the 90-Day Sentinel-CMMC "
+                "Compliance Intelligence Pilot ($3,000/month). If CMMC is not "
+                "the primary fit, identify the most relevant compliance or "
+                "operational risk angle for this prospect."
+            ),
         }
 
     def _response_inputs(self) -> dict:
         return {
-            "company_name": self.state.company_name,
-            "contact_name": self.state.contact_name,
-            "contact_role": self.state.contact_role,
-            "company_domain": self.state.company_domain,
-            "channel": self.state.channel,
-            "sequence_position": self.state.sequence_position,
-            "inbound_reply": self.state.inbound_reply,
-            "reply_from_email": self.state.reply_from_email,
-            "reply_message_id": self.state.reply_message_id,
-            "primary_goal": self.state.primary_goal,
-            "known_context": self.state.known_context,
+            "company_name":    self.state.company_name  or "[unknown — research from reply context]",
+            "company_domain":  self.state.company_domain or "",
+            "contact_name":    self.state.contact_name  or "[identify from reply]",
+            "contact_role":    "[identify from reply context]",
+            "channel":         self.state.channel       or "email",
+            "known_context":   self.state.known_context or "",
+            "inbound_reply":   self.state.inbound_reply,
+            "reply_from_email": self.state.reply_from_email or "",
+            "sequence_position": "response_received",
+            "primary_goal": "Classify this reply, log it, and alert Sean immediately if escalation is required.",
         }
 
     def _health_inputs(self) -> dict:
+        scope = "all active campaigns" if not self.state.campaign_id else f"campaign {self.state.campaign_id}"
         return {
-            "company_name": self.state.company_name,
-            "campaign_id": self.state.campaign_id,
-            "health_check_scope": self.state.health_check_scope,
-            "contact_name": self.state.contact_name,
-            "contact_role": self.state.contact_role,
-            "company_domain": self.state.company_domain,
-            "channel": self.state.channel,
-            "sequence_position": self.state.sequence_position,
-            "primary_goal": self.state.primary_goal,
-            "known_context": self.state.known_context,
+            "company_name":    "[campaign health check — no single prospect]",
+            "company_domain":  "",
+            "contact_name":    "[n/a]",
+            "contact_role":    "[n/a]",
+            "channel":         "all",
+            "known_context":   f"Health check scope: {scope}",
+            "campaign_id":     self.state.campaign_id or "all",
+            "sequence_position": "health_check",
+            "primary_goal": (
+                "Audit campaign health. Check domain reputation, deliverability, "
+                "engagement rates, suppression events, and API failures. "
+                "Alert Sean immediately if any metric crosses a critical threshold."
+            ),
         }
 
 
 # ---------------------------------------------------------------------------
-# Entry points
+# CLI entry points
 # ---------------------------------------------------------------------------
 
 def kickoff() -> None:
+    """Default entry point — new_lead pipeline."""
     ColdOutreachFlow().kickoff()
 
 
@@ -283,22 +269,21 @@ def kickoff_response(
     contact_name: str = "",
     reply_from_email: str = "",
 ) -> None:
-    """Convenience entry point for processing an inbound reply."""
+    """Process an inbound reply."""
     ColdOutreachFlow().kickoff(inputs={
-        "event_type": "response_received",
-        "inbound_reply": inbound_reply,
-        "company_name": company_name,
-        "contact_name": contact_name,
-        "reply_from_email": reply_from_email,
+        "event_type":        "response_received",
+        "inbound_reply":     inbound_reply,
+        "company_name":      company_name,
+        "contact_name":      contact_name,
+        "reply_from_email":  reply_from_email,
     })
 
 
-def kickoff_health_check(campaign_id: str = "", scope: str = "all") -> None:
-    """Convenience entry point for a campaign health check."""
+def kickoff_health_check(campaign_id: str = "") -> None:
+    """Run a campaign health check."""
     ColdOutreachFlow().kickoff(inputs={
-        "event_type": "health_check",
-        "campaign_id": campaign_id,
-        "health_check_scope": scope,
+        "event_type":   "health_check",
+        "campaign_id":  campaign_id,
     })
 
 
